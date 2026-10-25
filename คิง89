@@ -1,0 +1,526 @@
+-- ==========================================
+--  👑 King Hub | Full Working Edition 👑
+-- ==========================================
+
+local successFluent, Fluent = pcall(function()
+    return loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+end)
+
+if not successFluent or not Fluent then
+    warn("King Hub: ไม่สามารถโหลด Fluent UI ได้ กรุณาตรวจสอบอินเทอร์เน็ตหรือตัวรัน")
+    return
+end
+
+local Window = Fluent:CreateWindow({
+    Title = "👑 King Hub (Full Edition) 👑",
+    SubTitle = "โดย King Developer (Inner Menu Scrolling)",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 360),
+    Acrylic = true,
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+Fluent:SetTheme({
+    Accent = Color3.fromRGB(255, 215, 0),
+    Outline = Color3.fromRGB(255, 180, 0),
+    TitleText = Color3.fromRGB(255, 255, 255),
+    ItemText = Color3.fromRGB(240, 240, 240),
+    ElementBackground = Color3.fromRGB(25, 25, 28),
+    ElementOutline = Color3.fromRGB(45, 45, 50)
+})
+
+-- ปุ่มโลโก้ลอยบนจอมือถือ
+local CoreGui = game:GetService("CoreGui")
+if CoreGui:FindFirstChild("KingHubLogoButton") then CoreGui.KingHubLogoButton:Destroy() end
+
+local ToggleScreen = Instance.new("ScreenGui")
+ToggleScreen.Name = "KingHubLogoButton"
+ToggleScreen.ResetOnSpawn = false
+ToggleScreen.Parent = gethui and gethui() or CoreGui
+
+local ToggleImgBtn = Instance.new("ImageButton")
+ToggleImgBtn.Name = "KingLogoButton"
+ToggleImgBtn.Parent = ToggleScreen
+ToggleImgBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+ToggleImgBtn.BorderColor3 = Color3.fromRGB(255, 215, 0)
+ToggleImgBtn.BorderSizePixel = 2
+ToggleImgBtn.Position = UDim2.new(0, 15, 0, 15)
+ToggleImgBtn.Size = UDim2.new(0, 55, 0, 55)
+ToggleImgBtn.Image = "rbxassetid://108740156942852"
+ToggleImgBtn.Active = true
+ToggleImgBtn.Draggable = true
+
+local Corner = Instance.new("UICorner") Corner.CornerRadius = UDim.new(1, 0) Corner.Parent = ToggleImgBtn
+local UIStroke = Instance.new("UIStroke") UIStroke.Color = Color3.fromRGB(255, 215, 0) UIStroke.Thickness = 2.5 UIStroke.Parent = ToggleImgBtn
+
+ToggleImgBtn.MouseButton1Click:Connect(function()
+    if Window then Window:Minimize() end
+end)
+
+-- แท็บเมนูหลัก
+local Tabs = {
+    AIMBOT = Window:AddTab({ Title = "ระบบล็อคเป้า & Hitbox", Icon = "swords" }),
+    ESP = Window:AddTab({ Title = "มองทะลุผู้เล่น (Player ESP)", Icon = "eye" }),
+    MISC = Window:AddTab({ Title = "ตั้งค่าเสริม (MISC)", Icon = "settings" })
+}
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local Config = {
+    Aimbot = false, ShowFOV = false, FOVSize = 150, Smoothness = 0.15,
+    AimPartMode = "สลับออโต้ หัว-คอ-ตัว (0.5s)",
+    BigHead = false, HeadSize = 5,
+    BigBody = false, BodySize = 5,
+    ESPHealth = false, ESPLevel = false, ESPInventory = false, ESPDistance = false,
+    RedChams = false,
+    JumpHack = false, JumpPower = 50,
+    AntiRagdoll = false,
+    SpinBot = false
+}
+
+-- ฟังก์ชันดึง Level
+local function GetPlayerLevel(player)
+    local stats = player:FindFirstChild("leaderstats") or player:FindFirstChild("Data") or player:FindFirstChild("Stats") or player:FindFirstChild("PlayerData")
+    local lvl = "N/A"
+    if stats then
+        local lObj = stats:FindFirstChild("Level") or stats:FindFirstChild("Lvl") or stats:FindFirstChild("PlayerLevel")
+        if lObj then lvl = lObj.Value end
+    end
+    return lvl
+end
+
+-- ฟังก์ชันดึงชื่อไอเทม
+local function GetToolEnglishName(tool)
+    if not tool then return "" end
+    local realName = tool:GetAttribute("ItemName") or tool:GetAttribute("Name") or (tool.ToolTip ~= "" and tool.ToolTip)
+    if realName and type(realName) == "string" and not tonumber(realName) then return realName end
+    return tool.Name
+end
+
+local function GetAllPlayerItems(player, char)
+    local items = {}
+    local currentTool = char:FindFirstChildOfClass("Tool")
+    if currentTool then
+        table.insert(items, "[ถือ] " .. GetToolEnglishName(currentTool))
+    end
+    local backpack = player:FindFirstChildOfClass("Backpack")
+    if backpack then
+        for _, item in pairs(backpack:GetChildren()) do
+            if item:IsA("Tool") then
+                table.insert(items, GetToolEnglishName(item))
+            end
+        end
+    end
+    if #items == 0 then return "ไม่มีไอเทม (Empty)" end
+    return table.concat(items, "\n")
+end
+
+-- ==========================================
+--  1. AIMBOT, FOV & HITBOX TAB
+-- ==========================================
+Tabs.AIMBOT:AddSection("ระบบ Mbot / ล็อคเป้าหมายพิเศษ")
+
+local FOVCircle, CenterCross1, CenterCross2 = nil, nil, nil
+pcall(function()
+    FOVCircle = Drawing.new("Circle")
+    FOVCircle.Thickness = 2
+    FOVCircle.NumSides = 60
+    FOVCircle.Filled = false
+    FOVCircle.Visible = false
+
+    CenterCross1 = Drawing.new("Line") CenterCross1.Visible = false CenterCross1.Thickness = 1.5
+    CenterCross2 = Drawing.new("Line") CenterCross2.Visible = false CenterCross2.Thickness = 1.5
+end)
+
+Tabs.AIMBOT:AddToggle("OpenAimToggle", { Title = "เปิดใช้งาน Mbot (Aimbot Active)", Default = false, Callback = function(v) Config.Aimbot = v end })
+Tabs.AIMBOT:AddToggle("ShowFOVToggle", { Title = "แสดงวงกลม FOV & เป้าเล็ง", Default = false, Callback = function(v) 
+    Config.ShowFOV = v 
+    if FOVCircle then FOVCircle.Visible = v end
+    if CenterCross1 then CenterCross1.Visible = v end
+    if CenterCross2 then CenterCross2.Visible = v end
+end })
+
+Tabs.AIMBOT:AddDropdown("AimPartDropdown", {
+    Title = "เลือกจุดล็อกเป้า",
+    Values = {"สลับออโต้ หัว-คอ-ตัว (0.5s)", "ล็อกหัว (Head Only)", "ล็อกคอ (Neck)", "ล็อกตัว (HumanoidRootPart)"},
+    Default = "สลับออโต้ หัว-คอ-ตัว (0.5s)",
+    Callback = function(v) Config.AimPartMode = v end
+})
+
+Tabs.AIMBOT:AddSlider("FOVSizeSlider", { Title = "ขนาดวงกลมล็อค (FOV Size)", Min = 10, Max = 500, Default = 150, Rounding = 0, Callback = function(v) 
+    Config.FOVSize = v 
+    if FOVCircle then FOVCircle.Radius = v end 
+end })
+Tabs.AIMBOT:AddSlider("SmoothSlider", { Title = "ความเนียนในการล็อก (Lock Smoothness)", Min = 0.01, Max = 1, Default = 0.15, Rounding = 2, Callback = function(v) Config.Smoothness = v end })
+
+Tabs.AIMBOT:AddSection("🎯 ระบบขยาย Hitbox (หัวและตัวใหญ่ตีโดนง่าย)")
+Tabs.AIMBOT:AddToggle("BigHeadToggle", { Title = "เปิดหัวใหญ่ศัตรู (Big Head)", Default = false, Callback = function(v) Config.BigHead = v end })
+Tabs.AIMBOT:AddSlider("HeadSizeSlider", { Title = "ปรับขนาดหัว (Head Size)", Min = 1, Max = 15, Default = 5, Rounding = 1, Callback = function(v) Config.HeadSize = v end })
+Tabs.AIMBOT:AddToggle("BigBodyToggle", { Title = "เปิดตัวใหญ่ / Hitbox ใหญ่ (Big Body)", Default = false, Callback = function(v) Config.BigBody = v end })
+Tabs.AIMBOT:AddSlider("BodySizeSlider", { Title = "ปรับขนาดตัว (Body Size)", Min = 1, Max = 20, Default = 5, Rounding = 1, Callback = function(v) Config.BodySize = v end })
+
+-- ==========================================
+--  2. PLAYER ESP TAB
+-- ==========================================
+Tabs.ESP:AddSection("ข้อมูลผู้เล่น & ระบบมองทะลุ")
+Tabs.ESP:AddToggle("RedChamsToggle", { Title = "เปิดมองเห็นคนเป็นสีแดงทะลุกำแพง (Red Chams ESP)", Default = false, Callback = function(v) Config.RedChams = v end })
+Tabs.ESP:AddToggle("ESPHealthToggle", { Title = "แสดงหลอดเลือดเส้นตรง (Health Bar)", Default = false, Callback = function(v) Config.ESPHealth = v end })
+Tabs.ESP:AddToggle("ESPLevelToggle", { Title = "แสดงเลเวล (Level ESP)", Default = false, Callback = function(v) Config.ESPLevel = v end })
+Tabs.ESP:AddToggle("ESPDistanceToggle", { Title = "แสดงระยะห่างศัตรูระยะไกล (Distance ESP)", Default = false, Callback = function(v) Config.ESPDistance = v end })
+Tabs.ESP:AddToggle("ESPInventoryToggle", { Title = "แสดงกล่องรายการไอเทมทั้งหมด", Default = false, Callback = function(v) Config.ESPInventory = v end })
+
+-- ==========================================
+--  3. MISC TAB
+-- ==========================================
+Tabs.MISC:AddSection("ฟังก์ชันเสริม: โปรหมุนรอบตัว, กระโดดสูง & กันเซ")
+Tabs.MISC:AddToggle("SpinBotToggle", { Title = "เปิดโปรหมุนรอบตัวเอง (Spin Bot)", Default = false, Callback = function(v) Config.SpinBot = v end })
+Tabs.MISC:AddToggle("JumpHackToggle", { Title = "เปิดใช้งานกระโดดสูง (Jump Hack)", Default = false, Callback = function(v) Config.JumpHack = v end })
+Tabs.MISC:AddSlider("JumpSlider", { Title = "ปรับความสูงในการกระโดด (JumpPower)", Min = 50, Max = 350, Default = 50, Rounding = 0, Callback = function(v) Config.JumpPower = v end })
+Tabs.MISC:AddToggle("AntiRagdollToggle", { Title = "เปิดกันเซ/กันล้ม/กันปลิว (Anti-Stagger)", Default = false, Callback = function(v) Config.AntiRagdoll = v end })
+
+Tabs.MISC:AddButton({ Title = "ปิดการใช้งานสคริปต์ (Unload Script)", Callback = function() 
+    if ToggleScreen then ToggleScreen:Destroy() end 
+    pcall(function() 
+        if FOVCircle then FOVCircle:Remove() end
+        if CenterCross1 then CenterCross1:Remove() end
+        if CenterCross2 then CenterCross2:Remove() end
+    end)
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character then
+            if p.Character:FindFirstChild("KingESPBoard") then p.Character.KingESPBoard:Destroy() end
+            if p.Character:FindFirstChild("KingRedChamsHighlight") then p.Character.KingRedChamsHighlight:Destroy() end
+        end
+    end
+    Fluent:Destroy() 
+end })
+
+-- บังคับเซ็ตค่าพื้นที่เมนูภายใน
+task.spawn(function()
+    task.wait(0.4)
+    pcall(function()
+        for _, tabObj in pairs(Tabs) do
+            if tabObj and tabObj.Container then
+                tabObj.Container.ScrollingEnabled = true
+                tabObj.Container.Active = true
+                tabObj.Container.Selectable = true
+                tabObj.Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+                tabObj.Container.ScrollBarThickness = 6
+                local uiList = tabObj.Container:FindFirstChildOfClass("UIListLayout")
+                if uiList then
+                    uiList.SortOrder = Enum.SortOrder.LayoutOrder
+                    uiList.Padding = UDim.new(0, 8)
+                end
+            end
+        end
+    end)
+end)
+
+-- ==========================================
+--  ⚙ ULTIMATE PERFORMANCE LOOPS
+-- ==========================================
+local currentAutoPartIndex = 1
+local autoPartList = {"Head", "UpperTorso", "HumanoidRootPart"}
+task.spawn(function()
+    while task.wait(0.5) do
+        currentAutoPartIndex = currentAutoPartIndex % #autoPartList + 1
+    end
+end)
+
+local function GetTargetPart(char)
+    if not char then return nil end
+    if Config.AimPartMode:find("สลับออโต้") then
+        return char:FindFirstChild(autoPartList[currentAutoPartIndex]) or char:FindFirstChild("Head")
+    elseif Config.AimPartMode:find("ล็อกหัว") then
+        return char:FindFirstChild("Head")
+    elseif Config.AimPartMode:find("ล็อกคอ") then
+        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+    elseif Config.AimPartMode:find("ล็อกตัว") then
+        return char:FindFirstChild("HumanoidRootPart")
+    end
+    return char:FindFirstChild("Head")
+end
+
+local function GetClosestTarget()
+    if not Camera then return nil end
+    local bestTargetPart = nil
+    local maxDist = Config.FOVSize
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local part = GetTargetPart(p.Character)
+                if part then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                        if dist < maxDist then
+                            maxDist = dist
+                            bestTargetPart = part
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestTargetPart
+end
+
+local hue = 0
+local spinAngle = 0
+
+RunService.RenderStepped:Connect(function()
+    if not Camera then return end
+    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    -- 1. FOV & Crosshair
+    if FOVCircle then
+        FOVCircle.Position = screenCenter
+        FOVCircle.Radius = Config.FOVSize
+        if Config.ShowFOV then
+            hue = (hue + 0.006) % 1
+            local rainbowColor = Color3.fromHSV(hue, 1, 1)
+            FOVCircle.Color = rainbowColor
+            if CenterCross1 then CenterCross1.Color = rainbowColor end
+            if CenterCross2 then CenterCross2.Color = rainbowColor end
+            local crossSize = 5
+            if CenterCross1 then
+                CenterCross1.From = Vector2.new(screenCenter.X - crossSize, screenCenter.Y)
+                CenterCross1.To = Vector2.new(screenCenter.X + crossSize, screenCenter.Y)
+            end
+            if CenterCross2 then
+                CenterCross2.From = Vector2.new(screenCenter.X, screenCenter.Y - crossSize)
+                CenterCross2.To = Vector2.new(screenCenter.X, screenCenter.Y + crossSize)
+            end
+        end
+    end
+
+    -- 2. Aimbot
+    if Config.Aimbot then
+        local targetPart = GetClosestTarget()
+        if targetPart then
+            local targetCFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(Config.Smoothness, 0.01, 1))
+        end
+    end
+
+    -- 3. Character Hacks & Spin Bot
+    if LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hum then
+            if Config.JumpHack then
+                hum.UseJumpPower = true
+                hum.JumpPower = Config.JumpPower
+            end
+            if Config.SpinBot and hrp then
+                pcall(function()
+                    spinAngle = (spinAngle + 45) % 360
+                    hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, math.rad(spinAngle), 0)
+                end)
+            end
+            if Config.AntiRagdoll then
+                pcall(function()
+                    hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                    hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                    hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, false)
+                    hum:SetStateEnabled(Enum.HumanoidStateType.Stunned, false)
+                    hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+                    local state = hum:GetState()
+                    if state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.FallingDown or state == Enum.HumanoidStateType.PlatformStanding or state == Enum.HumanoidStateType.Stunned or state == Enum.HumanoidStateType.GettingUp then
+                        hum:ChangeState(Enum.HumanoidStateType.Running)
+                    end
+                end)
+            end
+        end
+    end
+
+    -- 4. Hitbox Expander (Big Head & Big Body)
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local char = p.Character
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local head = char:FindFirstChild("Head")
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+
+            if hum and hum.Health > 0 then
+                if head then
+                    if Config.BigHead then
+                        head.Size = Vector3.new(Config.HeadSize, Config.HeadSize, Config.HeadSize)
+                        head.Transparency = 0.5
+                        head.CanCollide = false
+                    else
+                        head.Size = Vector3.new(1.2, 1, 1.2)
+                        head.Transparency = 0
+                    end
+                end
+                if hrp then
+                    if Config.BigBody then
+                        hrp.Size = Vector3.new(Config.BodySize, Config.BodySize, Config.BodySize)
+                        hrp.Transparency = 0.7
+                        hrp.Material = Enum.Material.ForceField
+                        hrp.CanCollide = false
+                    else
+                        hrp.Size = Vector3.new(2, 2, 1)
+                        hrp.Transparency = 1
+                        hrp.Material = Enum.Material.SmoothPlastic
+                    end
+                end
+            end
+        end
+    end
+
+    -- 5. Player ESP & Red Chams
+    local espActive = Config.ESPHealth or Config.ESPLevel or Config.ESPInventory or Config.ESPDistance
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local char = p.Character
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+
+            if hum and hrp and hum.Health > 0 then
+                local highlight = char:FindFirstChild("KingRedChamsHighlight")
+                if Config.RedChams then
+                    if not highlight then
+                        highlight = Instance.new("Highlight")
+                        highlight.Name = "KingRedChamsHighlight"
+                        highlight.Adornee = char
+                        highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                        highlight.FillTransparency = 0.4
+                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        highlight.OutlineTransparency = 0
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.Parent = char
+                    end
+                else
+                    if highlight then highlight:Destroy() end
+                end
+
+                local bb = char:FindFirstChild("KingESPBoard")
+                if espActive then
+                    if not bb then
+                        bb = Instance.new("BillboardGui")
+                        bb.Name = "KingESPBoard"
+                        bb.Size = UDim2.new(0, 120, 0, 75)
+                        bb.Adornee = hrp
+                        bb.AlwaysOnTop = true
+                        bb.StudsOffset = Vector3.new(0, 2.2, 0)
+
+                        local container = Instance.new("Frame")
+                        container.Name = "Container"
+                        container.Size = UDim2.new(1, 0, 1, 0)
+                        container.BackgroundTransparency = 1
+                        container.Parent = bb
+
+                        local lbl = Instance.new("TextLabel")
+                        lbl.Name = "InfoText"
+                        lbl.Size = UDim2.new(1, 0, 0, 10)
+                        lbl.BackgroundTransparency = 1
+                        lbl.TextColor3 = Color3.fromRGB(255, 215, 0)
+                        lbl.TextStrokeTransparency = 0
+                        lbl.TextSize = 8
+                        lbl.Parent = container
+
+                        local hpBG = Instance.new("Frame")
+                        hpBG.Name = "HPBG"
+                        hpBG.Size = UDim2.new(0.6, 0, 0, 3)
+                        hpBG.Position = UDim2.new(0.2, 0, 0, 11)
+                        hpBG.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                        hpBG.BorderSizePixel = 1
+                        hpBG.Parent = container
+
+                        local hpBar = Instance.new("Frame")
+                        hpBar.Name = "HPBar"
+                        hpBar.Size = UDim2.new(1, 0, 1, 0)
+                        hpBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                        hpBar.BorderSizePixel = 0
+                        hpBar.Parent = hpBG
+
+                        local hpText = Instance.new("TextLabel")
+                        hpText.Name = "HPText"
+                        hpText.Size = UDim2.new(1, 0, 0, 8)
+                        hpText.Position = UDim2.new(0, 0, 0, 15)
+                        hpText.BackgroundTransparency = 1
+                        hpText.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        hpText.TextStrokeTransparency = 0
+                        hpText.TextSize = 6
+                        hpText.Parent = container
+
+                        local itemBox = Instance.new("Frame")
+                        itemBox.Name = "ItemBox"
+                        itemBox.Size = UDim2.new(0.9, 0, 0, 38)
+                        itemBox.Position = UDim2.new(0.05, 0, 0, 25)
+                        itemBox.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+                        itemBox.BackgroundTransparency = 0.4
+                        itemBox.BorderSizePixel = 1
+                        itemBox.BorderColor3 = Color3.fromRGB(0, 255, 255)
+                        itemBox.Visible = false
+                        itemBox.Parent = container
+
+                        local itemBoxCorner = Instance.new("UICorner")
+                        itemBoxCorner.CornerRadius = UDim.new(0, 3)
+                        itemBoxCorner.Parent = itemBox
+
+                        local itemText = Instance.new("TextLabel")
+                        itemText.Name = "ItemText"
+                        itemText.Size = UDim2.new(1, -4, 1, -2)
+                        itemText.Position = UDim2.new(0, 2, 0, 1)
+                        itemText.BackgroundTransparency = 1
+                        itemText.TextColor3 = Color3.fromRGB(0, 255, 255)
+                        itemText.TextStrokeTransparency = 0
+                        itemText.TextSize = 7
+                        itemText.TextXAlignment = Enum.TextXAlignment.Left
+                        itemText.TextYAlignment = Enum.TextYAlignment.Top
+                        itemText.TextWrapped = true
+                        itemText.Parent = itemBox
+
+                        bb.Parent = char
+                    end
+
+                    local container = bb:FindFirstChild("Container")
+                    if container then
+                        local textStr = "[" .. p.DisplayName .. "]"
+                        if Config.ESPLevel then textStr = textStr .. " Lvl:" .. tostring(GetPlayerLevel(p)) end
+                        if Config.ESPDistance and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            local dist = math.floor((hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude)
+                            textStr = textStr .. " [" .. tostring(dist) .. "m]"
+                        end
+                        container.InfoText.Text = textStr
+
+                        local hpBG = container:FindFirstChild("HPBG")
+                        local hpText = container:FindFirstChild("HPText")
+                        if hpBG and hpText then
+                            hpBG.Visible = Config.ESPHealth
+                            hpText.Visible = Config.ESPHealth
+                            local maxHealth = (hum.MaxHealth > 0) and hum.MaxHealth or 100
+                            local hpPercent = math.clamp(hum.Health / maxHealth, 0, 1)
+                            hpBG.HPBar.Size = UDim2.new(hpPercent, 0, 1, 0)
+                            hpText.Text = math.floor(hum.Health) .. "/" .. math.floor(maxHealth)
+                        end
+
+                        local itemBox = container:FindFirstChild("ItemBox")
+                        local itemText = container:FindFirstChild("ItemText")
+                        if itemBox and itemText then
+                            itemBox.Visible = Config.ESPInventory
+                            if Config.ESPInventory then
+                                itemText.Text = GetAllPlayerItems(p, char)
+                            end
+                        end
+                    end
+                elseif bb then
+                    bb:Destroy()
+                end
+            else
+                if char:FindFirstChild("KingESPBoard") then char.KingESPBoard:Destroy() end
+                if char:FindFirstChild("KingRedChamsHighlight") then char.KingRedChamsHighlight:Destroy() end
+            end
+        end
+    end
+end)
+
+Fluent:Notify({ Title = "King Hub Full Edition", Content = "โหลดสคริปต์และเปิดใช้งานทุกฟังก์ชันสำเร็จ!", Duration = 5 })
